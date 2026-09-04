@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 API_TOKEN = "8823867620:AAGrY3ytRsrl2NmZeUVci19zOVXAmFvUUY0"
-GROUP_ID = -4329733155
+GROUP_ID = -1004329733155  # Updated with -100 supergroup prefix
 
 logging.basicConfig(level=logging.INFO)
 
@@ -104,7 +104,6 @@ async def handle_text(message: types.Message):
     verified_users.add(user_id)
 
     try:
-      # Explicit check/generation of invite link
       invite = await bot.create_chat_invite_link(
           chat_id=GROUP_ID, creates_join_request=True
       )
