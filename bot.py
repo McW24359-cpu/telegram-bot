@@ -92,8 +92,7 @@ async def handle_text(message: types.Message):
 
   elif current_step == "typing":
     expected_text = state.get("typing_text", "READY")
-    
-    # If they get the text wrong, wipe their session and force them to restart
+
     if message.text.strip().upper() != expected_text.upper():
       user_data.pop(user_id, None)
       await message.answer(
@@ -101,11 +100,11 @@ async def handle_text(message: types.Message):
       )
       return
 
-    # If correct, proceed to generate the invite link
     user_data.pop(user_id, None)
     verified_users.add(user_id)
 
     try:
+      # Explicit check/generation of invite link
       invite = await bot.create_chat_invite_link(
           chat_id=GROUP_ID, creates_join_request=True
       )
@@ -120,7 +119,7 @@ async def handle_text(message: types.Message):
           reply_markup=builder.as_markup(),
       )
     except Exception as e:
-      logging.error(f"Failed to create invite link: {e}")
+      logging.error(f"Failed to create invite link for {GROUP_ID}: {e}")
       await message.answer(
           f"Verification passed, but failed to create link. Error: {e}"
       )
@@ -137,17 +136,16 @@ async def handle_emoji_callback(callback: types.CallbackQuery):
   target_emoji = user_data[user_id]["emoji_target"]
 
   if chosen_emoji == target_emoji:
-    # Pick a random word for the typing test
     random_word = random.choice(TYPING_WORDS)
     user_data[user_id]["step"] = "typing"
     user_data[user_id]["typing_text"] = random_word
 
     await callback.message.edit_text(
         "✅ Correct emoji selected!\n\n⌨️ **Step 3 of 3: Final Step**\nPlease type"
-        f" the exact word **{random_word}** in chat to complete your verification."
+        f" the exact word **{random_word}** in chat to complete your"
+        " verification."
     )
   else:
-    # Wrong emoji: clear data and force them to start over from scratch
     user_data.pop(user_id, None)
     await callback.message.edit_text(
         "❌ Wrong emoji selected! Captcha failed. Send /start to try again."
