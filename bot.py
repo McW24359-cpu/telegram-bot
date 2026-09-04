@@ -13,12 +13,11 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Track user states and verification progress
-# user_data = { user_id: {"step": "math", "math_ans": 12, "emoji_target": "🍎"} }
 user_data = {}
 verified_users = set()
 
 EMOJIS = ["🍎", "🐶", "🚗", "⭐", "⚽"]
+TYPING_WORDS = ["READY", "HUMAN", "VERIFY", "START", "PASS", "CODE", "WELCOME"]
 
 
 @dp.message(Command("start"))
@@ -34,7 +33,6 @@ async def cmd_start(message: types.Message):
     )
     return
 
-  # Generate random math question (e.g., 3 + 7 or 5 * 2)
   num1 = random.randint(1, 10)
   num2 = random.randint(1, 10)
   correct_ans = num1 + num2
@@ -61,12 +59,10 @@ async def handle_text(message: types.Message):
   state = user_data[user_id]
   current_step = state.get("step")
 
-  # Step 1: Math Verification Handler
   if current_step == "math":
     try:
       user_val = int(message.text.strip())
       if user_val == state["math_ans"]:
-        # Move to Step 2: Emoji selection
         target_emoji = random.choice(EMOJIS)
         state["step"] = "emoji"
         state["emoji_target"] = target_emoji
@@ -84,7 +80,6 @@ async def handle_text(message: types.Message):
             reply_markup=builder.as_markup(),
         )
       else:
-        # Incorrect math: Generate a NEW different question so they don't get stuck on the same numbers
         num1 = random.randint(1, 10)
         num2 = random.randint(1, 10)
         state["math_ans"] = num1 + num2
@@ -95,39 +90,39 @@ async def handle_text(message: types.Message):
     except ValueError:
       await message.answer("Please type a valid number.")
 
-  # Step 3: Typing Verification Handler
   elif current_step == "typing":
-    expected_text = state.get("typing_text", "VERIFY")
-    if message.text.strip().upper() == expected_text:
+    expected_text = state.get("typing_text", "READY")
+    
+    # If they get the text wrong, wipe their session and force them to restart
+    if message.text.strip().upper() != expected_text.upper():
       user_data.pop(user_id, None)
-      verified_users.add(user_id)
-
-      # Generate personal single-use join request link
-      try:
-        invite = await bot.create_chat_invite_link(
-            chat_id=GROUP_ID, creates_join_request=True
-        )
-
-        builder = InlineKeyboardBuilder()
-        builder.button(
-            text="✅ Send Join Request", url=invite.invite_link
-        )
-
-        await message.answer(
-            "🎉 **Verification Complete!**\n\nClick the button below to send your"
-            " join request to the group. The bot will automatically approve"
-            " you within 5 seconds!",
-            reply_markup=builder.as_markup(),
-        )
-      except Exception as e:
-        logging.error(f"Failed to create invite link: {e}")
-        await message.answer(
-            "Verification passed, but failed to generate link. Contact an"
-            " admin."
-        )
-    else:
       await message.answer(
-          f"❌ Incorrect text. Please type exactly: **{expected_text}**"
+          "❌ Incorrect text. Captcha failed! Type /start to try again."
+      )
+      return
+
+    # If correct, proceed to generate the invite link
+    user_data.pop(user_id, None)
+    verified_users.add(user_id)
+
+    try:
+      invite = await bot.create_chat_invite_link(
+          chat_id=GROUP_ID, creates_join_request=True
+      )
+
+      builder = InlineKeyboardBuilder()
+      builder.button(text="✅ Send Join Request", url=invite.invite_link)
+
+      await message.answer(
+          "🎉 **Verification Complete!**\n\nClick the button below to send your"
+          " join request to the group. The bot will automatically approve"
+          " you within 5 seconds!",
+          reply_markup=builder.as_markup(),
+      )
+    except Exception as e:
+      logging.error(f"Failed to create invite link: {e}")
+      await message.answer(
+          f"Verification passed, but failed to create link. Error: {e}"
       )
 
 
@@ -142,31 +137,34 @@ async def handle_emoji_callback(callback: types.CallbackQuery):
   target_emoji = user_data[user_id]["emoji_target"]
 
   if chosen_emoji == target_emoji:
-    # Move to Step 3: Typing confirmation
+    # Pick a random word for the typing test
+    random_word = random.choice(TYPING_WORDS)
     user_data[user_id]["step"] = "typing"
-    user_data[user_id]["typing_text"] = "READY"
+    user_data[user_id]["typing_text"] = random_word
 
     await callback.message.edit_text(
         "✅ Correct emoji selected!\n\n⌨️ **Step 3 of 3: Final Step**\nPlease type"
-        " the word **READY** in chat to complete your verification."
+        f" the exact word **{random_word}** in chat to complete your verification."
     )
   else:
-    await callback.answer("Wrong emoji! Try again.", show_alert=True)
+    # Wrong emoji: clear data and force them to start over from scratch
+    user_data.pop(user_id, None)
+    await callback.message.edit_text(
+        "❌ Wrong emoji selected! Captcha failed. Send /start to try again."
+    )
 
 
 @dp.chat_join_request()
 async def handle_join_request(event: types.ChatJoinRequest):
   user_id = event.from_user.id
-  if user_id in verified_users:
-    # 5-second delay before auto-approving
-    await asyncio.sleep(5)
-    try:
-      await bot.approve_chat_join_request(
-          chat_id=event.chat.id, user_id=user_id
-      )
-      verified_users.discard(user_id)  # Clean up after approval
-    except Exception as e:
-      logging.error(f"Failed to approve join request: {e}")
+  await asyncio.sleep(5)
+  try:
+    await bot.approve_chat_join_request(
+        chat_id=event.chat.id, user_id=user_id
+    )
+    verified_users.discard(user_id)
+  except Exception as e:
+    logging.error(f"Failed to approve join request: {e}")
 
 
 async def main():
